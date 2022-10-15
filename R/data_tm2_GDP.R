@@ -11,7 +11,7 @@ library(haven)
 library(RColorBrewer)
 
 #设置工作路径
-setwd('D:/0 job/0 DataFusion/literature/application/global_economy/supplement/')
+setwd('D:/0 job/0 research/Global-Climate-vs-Economy/')
 #RColorBrewer中的所有调色板
 display.brewer.all()
 #选取Set1调色板中的四种颜色
@@ -40,8 +40,8 @@ if (F){
   map0 <- gadm_sf_import_shp(dir = './data/gadm/',name = 'ABW', level=5,del = remV,keepall = T)
   sf_use_s2(FALSE)
   gadm_plot(map0) %>% gadm_showNorth("tl") %>% gadm_showScale("bl")
-  map0$sf <- map0$sf %>%  dplyr::group_by(GID_1) %>% 
-    dplyr::summarise() 
+  map0$sf <- map0$sf %>%  dplyr::group_by(GID_1) %>%
+    dplyr::summarise()
   gadm_plot(map0) %>% gadm_showNorth("tl") %>% gadm_showScale("bl")
   map0$level = 2
   countryList[-4]
@@ -50,12 +50,12 @@ if (F){
     if (endsWith(country,'.shp')){
       curren_map <- gadm_sf_import_shp(dir = './data/gadm/',name = substr(country,1,3), level=5,del = remV,keepall = T)
       #融合尺度对应NAME_2中的数字，NAME_'level'
-      curren_map$sf <- curren_map$sf %>%  dplyr::group_by(GID_1) %>% 
-        dplyr::summarise() 
+      curren_map$sf <- curren_map$sf %>%  dplyr::group_by(GID_1) %>%
+        dplyr::summarise()
       map0$sf = rbind(map0$sf,curren_map$sf)
       #gadm_plot(map0) %>% gadm_showNorth("tl") %>% gadm_showScale("bl")
     }
-  } 
+  }
   GADMTools::gadm_exportToShapefile(x = map0,name = './data/gadm_global_l2/gadm_global_l2.shp')
 }
 
@@ -63,7 +63,8 @@ map0 = GADMTools::gadm_sf_import_shp(dir = './data/gadm_global_l2/',name = 'gadm
 
 for (ncf in era5_list){
   if (endsWith(ncf,'.nc')){
-    file = paste0('./data/ERA5/',ncf)
+    ncf = 'tm2_2021.nc'
+    file = paste0('E:/0 job/data/ERA5/',ncf)
     files_nc = ncdf4::nc_open(file,write=FALSE, readunlim=T, verbose=FALSE, auto_GMT=TRUE, suppress_dimvals=FALSE)
     name_files_nc = names(files_nc$var)
     
@@ -85,6 +86,9 @@ for (ncf in era5_list){
     ly_monsum = 0
     ly_daymeanlist = NULL
     ly_monmeanlist = NULL
+    ly_monvarlist = NULL
+    region.monvarlist = NULL
+    
     for (lyi in 1:datalen){
       ly1 = nc_raster@layers[[lyi]]
       nc_raster@layers[]
@@ -99,18 +103,25 @@ for (ncf in era5_list){
       day = strsplit(ly1@data@names,split = '[.]')[[1]][3]
       date = paste0(year,month,day)
       
-      ly_daysum = ly_daysum+ly1 
-      ly_monsum = ly_monsum+ly1 
-      dayt2mCount = dayt2mCount+1
-      mont2mCount = mont2mCount+1
+      
+      
       if (lyi!=1){
+        ly_daysum = ly_daysum+ly1
+        dayt2mCount = dayt2mCount+1
+        ly_monsum = ly_monsum+ly1
+        mont2mCount = mont2mCount+1
+        
+      }else{
         ly0 = nc_raster@layers[[(lyi-1)]]
-        ly0 = rotate(ly0)
-        #day average 
+        ly0 = rotate(ly1)
+        #day average
         day0 = strsplit(ly0@data@names,split = '[.]')[[1]][3]
-        if (day != day0){
-          ly_daysum = ly_daysum/dayt2mCount
-          ly_daysumlist = append(ly_daysumlist,ly_daysum)
+        if (day == day0){
+          ly_daysum = ly_daysum+ly1
+          dayt2mCount = dayt2mCount+1
+        }else{
+          ly_daymean = ly_daysum/dayt2mCount
+          ly_daymeanlist = append(ly_daymeanlist,ly_daymean)
           ly_daysum = 0
           dayt2mCount = 0
           if(F){
@@ -120,25 +131,44 @@ for (ncf in era5_list){
               scale_fill_viridis_c(option = "D", trans = "sqrt")
           }
         }
+        
         #month average
-        month0 = strsplit(ly0@data@names,split = '[.]')[[1]][3]
-        if (month0 != month){
-          ly_monsum = ly_monsum/mont2mCount
-          ly_monsumlist = append(ly_monsumlist,ly_monsum)
+        month0 = strsplit(ly0@data@names,split = '[.]')[[1]][2]
+        if (month0 == month){
+          ly_monsum = ly_monsum+ly1
+          mont2mCount = mont2mCount+1
+        }else{
+          ly_monmean = ly_monsum/mont2mCount
+          ly_monmeanlist = append(ly_monmeanlist,ly_monmean)
+          
+          ly_daymeanlist = c(ly1,ly1/3)
+          
+          ly.diffsum = 0
+          ly_monvarsum <- sapply(ly_daymeanlist, function(ly.day){
+            (ly.day - ly_monmean)^2
+          }) %>% sapply(., function(ly.diff){
+            ly.diffsum + ly.diff
+          }) %>% last()
+          
+          
+          ly_monvar = ly_monvarsum/mont2mCount
+          ly_monvarlist = append(ly_monvarlist,ly_monvar)
+          
+          ly_daymeanlist = NULL
+          
           ly_monsum = 0
-          dayt2mCount = 0
+          mont2mCount = 0
           
-          
-          UN_DF = extract(ly_sum, map0$sf, fun = mean,
-                          df = T, na.rm = T,weights = T,small = T)
+          #lydiffsum = 0
+          region.monvar = extract(ly_monvar, map0$sf, fun = mean,
+                                  df = T, na.rm = T,weights = T,small = T)
           #UN_DF = extract(ly_sum, map0$sf, fun = mean,
           #               df = T, na.rm = T,exact = T,small= T)
-          dayt2mmean = UN_DF[,2]/dayt2mCount
-          dayt2mmean[dayt2mmean == -Inf] = NA
-          map0$sf = cbind(map0$sf,dayt2mmean)
-          map0$sf = plyr::rename(map0$sf,c('dayt2mmean' = date))
-          ly_sum = 0
-          dayt2mCount = 0
+          
+          region.monvar[region.monvar == -Inf] = NA
+          
+          region.monvarlist = append(region.monvarlist,region.monvar)
+          
           if(F){
             library(ggplot2)
             ggplot()+
@@ -147,18 +177,19 @@ for (ncf in era5_list){
           }
         }
         
-        
-        
       }
-
-      map0$sf$lgdp_pc_usd = economic_data$lgdp_pc_usd[economic_data$GID_1 %in% map0$sf$GID_1]
+      print(lyi)
+      
     }
     
   }
   
 }
- 
-  
+
+
+
+
+
 
 
 
@@ -166,7 +197,7 @@ for (ncf in era5_list){
 library (rgdal)
 library (RSQLite)
 
-# Explore the layers available 
+# Explore the layers available
 ogrListLayers("./data/gadm_410.gpkg")
 library(dplyr)
 
@@ -185,7 +216,7 @@ gadm_afg <- readRDS("./data/AFG_adm2.rds")
 
 rgdal::
   
-gadm410 = load_databasegpkg(GPKG = "./data/gadm_410.gpkg",layer = "gadm_410")
+  gadm410 = load_databasegpkg(GPKG = "./data/gadm_410.gpkg",layer = "gadm_410")
 gadmsf = as(gadm410$geom,'sf')
 as.vector(gadm410$geom[[1]])
 
